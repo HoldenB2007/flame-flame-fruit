@@ -62,3 +62,43 @@ X_test = day_df.drop(columns=col_drop, errors='ignore')
 #Grab the models predictions for the selected date and add them to the dataframe as a new column
 probabilities = model.predict_proba(X_test)
 day_df['danger_score'] = probabilities[:, 1] * 100
+
+# -- Map Visualization --
+st.subheader(f"Fire Risk Map for {selected_date}")
+#center the map around SWCO
+topo_map = folium.Map(location=[38.0, -107.5], zoom_start=8, tiles='OpenTopoMap')
+def get_color(score):
+    if score < 40:
+        return 'green'
+    elif score < 60:
+        return 'yellow'
+    elif score < 80:
+        return 'orange'
+    elif score < 90:
+        return 'red'
+    else:
+        return 'darkred'
+
+grid_step = 0.1 # gives about a 6x6mile grid
+#Loop through each row in the df and make the appropriate rectangle on the map
+for index, row in day_df.iterrows():
+    bounds = [[row['lat'], row['lon']], [row['lat'] + grid_step, row['lon'] + grid_step]]
+    color = get_color(row['danger_score'])
+    opacity = 0.3
+    folium.Rectangle(
+        bounds=bounds, 
+        color=color, 
+        weight=1,
+        fill=True, 
+        fill_color=color,
+        fill_opacity=opacity
+    ).add_to(topo_map)
+
+    #if there was actually a fire that day, add a marker to the map
+    if row['fire'] == 1:
+        folium.Marker(
+            location=[row['lat'] + grid_step/2, row['lon'] + grid_step/2],
+            icon=folium.Icon(color='red', icon='fire', prefix='fa'),
+            popup=f"Fire"
+        ).add_to(topo_map)
+folium_static(topo_map, width=1200, height=700)
