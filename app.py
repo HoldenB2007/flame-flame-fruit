@@ -36,7 +36,7 @@ model = load_model(model_file)
 @st.cache_data
 def load_data():
     try:
-        return pd.read_csv('final_fire_data.csv')
+        return pd.read_csv('demo_data.csv')
     except Exception as e:
         st.error(f"Error loading data: {e}")
         return None
@@ -48,6 +48,7 @@ if model is None or data is None:
     st.error("Model or Data could not be loaded.")
     st.stop()  
 
+
 #Allow user to select a date to see fire risk
 st.sidebar.header("Date Selection")
 available_dates = data['date'].unique()
@@ -55,6 +56,7 @@ selected_date = st.sidebar.selectbox("Select Date", available_dates)
 day_df = data[data['date'] == selected_date].copy()
 
 # -- Data Preprocessing --
+
 #Drop the same columns that were dropped during model training
 col_drop = ['fire','system:index','date', '.geo', 'T21_max', 'T21_mean', 'T21_stdDev']
 X_test = day_df.drop(columns=col_drop, errors='ignore')
@@ -79,10 +81,9 @@ def get_color(score):
     else:
         return 'darkred'
 
-grid_step = 0.1 # gives about a 6x6mile grid
 #Loop through each row in the df and make the appropriate rectangle on the map
 for index, row in day_df.iterrows():
-    bounds = [[row['lat'], row['lon']], [row['lat'] + grid_step, row['lon'] + grid_step]]
+    bounds = [[row['lat'], row['lon']], [row['lat'] + lat_step, row['lon'] + lon_step]]
     color = get_color(row['danger_score'])
     opacity = 0.3
     folium.Rectangle(
@@ -97,7 +98,7 @@ for index, row in day_df.iterrows():
     #if there was actually a fire that day, add a marker to the map
     if row['fire'] == 1:
         folium.Marker(
-            location=[row['lat'] + grid_step/2, row['lon'] + grid_step/2],
+            location=[row['lat'] + lat_step/2, row['lon'] + lon_step/2],
             icon=folium.Icon(color='red', icon='fire', prefix='fa'),
             popup=f"Fire"
         ).add_to(topo_map)
