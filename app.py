@@ -57,8 +57,19 @@ day_df = data[data['date'] == selected_date].copy()
 
 # -- Data Preprocessing --
 
+#draw the grid using the gid_x and grid_y columns
+#grab all the corners
+min_x = day_df['grid_x'].min()
+max_x = day_df['grid_x'].max()
+min_y = day_df['grid_y'].min()
+max_y = day_df['grid_y'].max()
+
+#scale the grid to lat/lon coordinates for the map
+day_df['lon'] = np.interp(day_df['grid_x'], [min_x, max_x], [-109.0, -102.0])
+day_df['lat'] = np.interp(day_df['grid_y'], [min_y, max_y], [41.0, 37.0])
+
 #Drop the same columns that were dropped during model training
-col_drop = ['fire','system:index','date', '.geo', 'T21_max', 'T21_mean', 'T21_stdDev']
+col_drop = ['fire','system:index','date', '.geo', 'T21_max', 'T21_mean', 'T21_stdDev','lat','lon']
 X_test = day_df.drop(columns=col_drop, errors='ignore')
 
 #Grab the models predictions for the selected date and add them to the dataframe as a new column
@@ -67,6 +78,7 @@ day_df['danger_score'] = probabilities[:, 1] * 100
 
 # -- Map Visualization --
 st.subheader(f"Fire Risk Map for {selected_date}")
+
 #center the map around SWCO
 topo_map = folium.Map(location=[38.0, -107.5], zoom_start=8, tiles='OpenTopoMap')
 def get_color(score):
@@ -80,6 +92,10 @@ def get_color(score):
         return 'red'
     else:
         return 'darkred'
+
+#calculate size of grid squares
+lon_step = 7.0 / max(1, (max_x - min_x))
+lat_step = 4.0 / max(1, (max_y - min_y))
 
 #Loop through each row in the df and make the appropriate rectangle on the map
 for index, row in day_df.iterrows():
