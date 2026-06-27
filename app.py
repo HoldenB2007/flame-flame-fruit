@@ -19,6 +19,7 @@ st.sidebar.divider()
 # -- Model Specfics --
 
 #Make sure the model names match the filenames saved in directory
+#change the else model to whatever the model name is for adam
 model_file='fire_prediction_model.pkl' if model_choice == "Random Forest" else 'fire_prediction_model_gd.pkl'
 
 #load the model in from directory and cache it
@@ -33,6 +34,7 @@ def load_model(filename):
 model = load_model(model_file)
 
 # -- Map data --
+
 @st.cache_data
 def load_data():
     try:
@@ -73,6 +75,7 @@ col_drop = ['fire','system:index','date', '.geo', 'T21_max', 'T21_mean', 'T21_st
 X_test = day_df.drop(columns=col_drop, errors='ignore')
 
 #Grab the models predictions for the selected date and add them to the dataframe as a new column
+#This may be different for the ADAM model
 probabilities = model.predict_proba(X_test)
 day_df['danger_score'] = probabilities[:, 1] * 100
 
@@ -81,6 +84,7 @@ st.subheader(f"Fire Risk Map for {selected_date}")
 
 #center the map around SWCO
 topo_map = folium.Map(location=[38.0, -107.5], zoom_start=8, tiles='OpenTopoMap')
+#Color in the grid based on the models confidence of fire risk
 def get_color(score):
     if score < 40:
         return 'green'
@@ -94,6 +98,7 @@ def get_color(score):
         return 'darkred'
 
 #calculate size of grid squares
+#This gives about 6x6 mile squares, which is the size of the grid used in the model training
 lon_step = 7.0 / max(1, (max_x - min_x))
 lat_step = 4.0 / max(1, (max_y - min_y))
 
@@ -118,4 +123,5 @@ for index, row in day_df.iterrows():
             icon=folium.Icon(color='red', icon='fire', prefix='fa'),
             popup=f"Fire"
         ).add_to(topo_map)
+#draw the map
 folium_static(topo_map, width=1200, height=700)
