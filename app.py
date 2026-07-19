@@ -3,7 +3,10 @@ import pandas as pd
 import joblib
 import numpy as np
 import folium
+import torch
+import torch.nn as nn
 from streamlit_folium import folium_static, st_folium
+
 
 # -- Basic UI --
 st.set_page_config(page_title="Fire Prediction Demo", page_icon="🔥", layout="wide")
@@ -18,20 +21,39 @@ st.sidebar.divider()
 
 # -- Model Specfics --
 
-#Make sure the model names match the filenames saved in directory
-#change the else model to whatever the model name is for adam
-model_file='fire_prediction_model.pkl' if model_choice == "Random Forest" else 'fire_prediction_model_gd.pkl'
+#The ADAM model references this class, so I just manually defined it here
+class FireNet(nn.Module):
+    def __init__(self, input_dim):
+        super(FireNet, self).__init__()
+        self.network = nn.Sequential(
+            nn.Linear(input_dim, 128),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(128, 64),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(64, 32),
+            nn.ReLU(),
+            nn.Linear(32, 1),
+            nn.Sigmoid()  # outputs a probability between 0 and 1
+        )
+
+    def forward(self, x):
+        return self.network(x).squeeze(1)
+
+
 
 #load the model in from directory and cache it
+#We only need to do this for the random forest model
 @st.cache_resource
-def load_model(filename):
+def load_model():
     try:
-        return joblib.load(filename)
+        return joblib.load('fire_prediction_model.pkl')
     except Exception as e:
         st.error(f"Error loading model: {e}")
         return None
     
-model = load_model(model_file)
+rf_model = load_model()
 
 # -- Map data --
 
@@ -46,7 +68,7 @@ def load_data():
 data = load_data()
 
 #Stop everything if the model or data didnt load in correctly
-if model is None or data is None:
+if rf_model is None or data is None:
     st.error("Model or Data could not be loaded.")
     st.stop()  
 
@@ -74,10 +96,31 @@ day_df['lat'] = np.interp(day_df['grid_y'], [min_y, max_y], [41.0, 37.0])
 col_drop = ['fire','system:index','date', '.geo', 'T21_max', 'T21_mean', 'T21_stdDev','lat','lon']
 X_test = day_df.drop(columns=col_drop, errors='ignore')
 
+#If there are any missing values, fill them with 0, so the square isnt displayed
+X_test = X_test.fillna(0)
+
 #Grab the models predictions for the selected date and add them to the dataframe as a new column
-#This may be different for the ADAM model
-probabilities = model.predict_proba(X_test)
-day_df['danger_score'] = probabilities[:, 1] * 100
+if model_choice == "Random Forest":
+    probabilities = rf_model.predict_proba(X_test)
+    day_df['danger_score'] = probabilities[:, 1] * 100
+else: 
+    #Load the scaler and scale the data so its the same as the training data for the ADAM model
+    scaler = joblib.load('pytorch_scaler.pkl')
+    X_test_scaled = scaler.transform(X_test)
+
+    input_dim = X_test_scaled.shape[1] #input dimension for the model
+    pytorch_model = FireNet(input_dim) #empty FireNet shell model
+
+    #Load the trained model weights into the FireNet model
+    pytorch_model.load_state_dict(torch.load('pytorch_fire_model.pth', weights_only=True))
+    pytorch_model.eval()
+
+    #Run predictions using the scaled data, then add it as a danger score same as the random forest model
+    X_test_tensor = torch.tensor(X_test_scaled, dtype=torch.float32)
+    with torch.no_grad():
+        probs = pytorch_model(X_test_tensor).cpu().numpy()
+        day_df['danger_score'] = probs * 100
+
 
 # -- Map Visualization --
 st.subheader(f"Fire Risk Map for {selected_date}")
@@ -86,6 +129,8 @@ st.subheader(f"Fire Risk Map for {selected_date}")
 topo_map = folium.Map(location=[38.0, -107.5], zoom_start=8, tiles='OpenTopoMap')
 #Color in the grid based on the models confidence of fire risk
 def get_color(score):
+    if pd.isna(score):
+        return 'transparent'
     if score < 40:
         return 'green'
     elif score < 60:
