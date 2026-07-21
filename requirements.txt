@@ -1,0 +1,12 @@
+pandas
+scikit-learn
+torch
+torchvision
+torchaudio
+earthengine-api
+geemap
+ipykernel
+streamlit
+streamlit-folium
+folium
+joblib
